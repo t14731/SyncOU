@@ -18,335 +18,68 @@
 
    ===========================================================================
 #>
-
-
-$pdcefrom = (Get-ADDomainController -Server "testdc1.test.net" -Filter {OperationMasterRoles -like 'PDCEmulator'}).hostname
-$ADNameSource = (Get-ADDomain -Server "testdc1.test.net" ).name
-$pdceto = (Get-ADDomainController -Server "testdc2.test2.net" -Filter {OperationMasterRoles -like 'PDCEmulator'}).hostname
-$ADNameDestination = (Get-ADDomain -Server "testdc2.test2.net").name
 $credentialForestFrom = (Get-Credential)
 $credentialForestTo = (Get-Credential)
 
+$SourceDomainController = Read-Host "Enter Source Domain Controller - Example DC1.sourceforest.net"
+$DestinationDomainController = Read-Host "Enter Destination Domain Controller - Example - dc1.destinationforest.net"
+
+$pdceSource = (Get-ADDomainController -Server "$SourceDomainController" -Filter {OperationMasterRoles -like 'PDCEmulator'} -Credential $credentialForestSource ).hostname
+$ADNameSource = (Get-ADDomain -Server "$pdceSource" -Credential $credentialForestSource ).name
+
+$pdceDestination = (Get-ADDomainController -Server "$DestinationDomainController" -Filter {OperationMasterRoles -like 'PDCEmulator'} -Credential $credentialForestDestination).hostname
+$ADNameDestination = (Get-ADDomain -Server "$pdceDestination" -Credential $credentialForestDestination).name
+
+
+Function SyncOU{
 $OFS = ','
-$domain = (get-addomain -Server $pdceto -Credential $credentialForestTo).Distinguishedname
-$domain2 = (get-addomain -Server $pdcefrom -Credential $credentialForestfrom).Distinguishedname
+$DNSourceDomain = (get-addomain -Server $pdceSource -Credential $credentialForestSource).Distinguishedname
+$DNDesinationDomain = (get-addomain -Server $pdceDestination -Credential $credentialForestDestination).Distinguishedname
+
 [Array]$data = ""
-[array]$data = (Get-ADOrganizationalUnit -SearchBase $domain2 -filter * -Server $pdcefrom -Credential $credentialForestFrom ).Distinguishedname
+[array]$data = (Get-ADOrganizationalUnit -SearchBase $DNSourceDomain -filter * -Server $pdceSource -Credential $credentialForestSource ).Distinguishedname
 [array]::Reverse($data)
+ $line = $null
+[int]$i =$null
 
 foreach($line in $data){
-Write-host $line
-[Array]$splitmereverse = $line -split $OFS
-[array]::Reverse($splitmereverse)
-#Write-host $line.OU -ForegroundColor Yellow
-        for($i = $splitmereverse.GetLowerBound(0); $i -le $splitmereverse.GetUpperBound(0)) 
-        { 
-            
-            $i++
+    #Write-host $line -ForegroundColor Yellow
+    $line = $line.replace(",$DNSourceDomain","")
+    #write-host $line -ForegroundColor green
+    [Array]$splitmereverse = $line -split $OFS
+    [array]::Reverse($splitmereverse)
+    #write-host $splitmereverse -ForegroundColor Cyan # OU=Admin OU=Servers OU=2016 R1 OU=test OU=test2 OU=test3 OU=test4
 
-                    if($i -eq 2) #Start at array postion 2
-                        {
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
 
-                            Try{
-                                    $oucheck = $splitmereverse[$i]+","+$domain
+    #Write-host $line.OU -ForegroundColor Yellow
+    write-host $splitmereverse.Count -ForegroundColor green
+    $OUCount = $splitmereverse.Count
+    $DNDesinationDomain = $null
+    $DNDesinationDomain = (get-addomain -Server $pdceDestination -Credential $credentialForestDestination).Distinguishedname
+            foreach($_ in $splitmereverse) 
+            { 
+                write-host $splitmereverse[$i] -ForegroundColor Yellow
+                $outarget = $splitmereverse[$i].replace("OU=",'')
+
+
+       
+                                    Try{
+                                    
+                                    $oucheck = $splitmereverse[$i]+","+$DNDesinationDomain
                                     Write-verbose $oucheck -Verbose
-                                    Get-ADOrganizationalUnit $oucheck -ErrorAction Ignore -Server $pdceto -Credential $credentialForestTo
+                                    Get-ADOrganizationalUnit $oucheck -ErrorAction Ignore -Server $pdceDestination -Credential $credentialForestDestination
                                 }
 
                                 Catch {
-                                        Write-host " OU $outarget is being created in path $domain" -ForegroundColor Yellow
-                                        New-ADOrganizationalUnit -Name $outarget -Path $domain -Server $pdceto -Credential $credentialForestTo
-                                        Write-host " OU $outarget has been created  in path $domain" -ForegroundColor Cyan
+                                        Write-host " OU $outarget is being created in path $DNDesinationDomain" -ForegroundColor Yellow
+                                        New-ADOrganizationalUnit -Name $outarget -Path $DNDesinationDomain -Server $pdceDestination -Credential $credentialForestDestination
+                                        Write-host " OU $outarget has been created  in path $DNDesinationDomain" -ForegroundColor Cyan
                                         }
 
+    
 
+                $i++
+                $DNDesinationDomain = $oucheck
 
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){
-                                                        $outarget = $splitmereverse[$i].replace("OU=",'')
-                                $path =  $splitmereverse[2] + "," + $domain 
-                                $oucheck = $splitmereverse[$i]+","+$splitmereverse[2] + "," + $domain
-                            Try{
-                                     Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore 
-                                     }
-
-                                Catch {
-                                        Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                        New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                        Write-host " OU $outarget has been created in path $path"-ForegroundColor Cyan
-                                        }
-
-
-
-
-
-                        } #postion 3
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){
-
-                                $outarget = $splitmereverse[$i].replace("OU=",'')
-                                $path = $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                                $oucheck = $splitmereverse[$i]+","+ $path
-
-                            Try{
-                                    Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                                    }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-
-                        } #postion 4
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){
-
-                                $outarget = $splitmereverse[$i].replace("OU=",'')
-                                $path = $splitmereverse[4] + "," + $splitmereverse[3] +"," + $splitmereverse[2] + "," + $domain 
-                                $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                                Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                                }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 5
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                                $outarget = $splitmereverse[$i].replace("OU=",'')
-                                $path = $splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                                $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                                Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                                }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 6
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                               $outarget = $splitmereverse[$i].replace("OU=",'')
-                               $path = $splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                               $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                                Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                                }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 7
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 8
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 9
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 10
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[10] +"," + $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 11
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[11] +"," + $splitmereverse[10] +"," + $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 12
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[12] +"," + $splitmereverse[11] +"," + $splitmereverse[10] +"," + $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 13
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[13] +"," + $splitmereverse[12] +"," + $splitmereverse[11] +"," + $splitmereverse[10] +"," + $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 14
-
-            $i++
-
-                    if (($i -eq $splitmereverse.GetUpperBound(0))  -or ($i -lt  $splitmereverse.GetUpperBound(0))){ 
-
-                            $outarget = $splitmereverse[$i].replace("OU=",'')
-                            $path = $splitmereverse[14] +"," + $splitmereverse[13] +"," + $splitmereverse[12] +"," + $splitmereverse[11] +"," + $splitmereverse[10] +"," + $splitmereverse[9] +"," + $splitmereverse[8] +"," + $splitmereverse[7] +"," +$splitmereverse[6] +"," +$splitmereverse[5] +"," + $splitmereverse[4] + "," + $splitmereverse[3] + "," + $splitmereverse[2] + "," + $domain 
-                            $oucheck = $splitmereverse[$i]+","+ $path
-
-
-                            Try{
-                            Get-ADOrganizationalUnit $oucheck -Server $pdceto -Credential $credentialForestTo -ErrorAction Ignore
-                            }
-
-                            Catch {
-                                    Write-host " OU $outarget is being created in path $path" -ForegroundColor Yellow
-                                    New-ADOrganizationalUnit -Name $outarget -Path $path -Server $pdceto -Credential $credentialForestTo
-                                    Write-host " OU $outarget has been created in path $path" -ForegroundColor Cyan
-                                    }
-
-                        } #postion 15
-
-
-
-
-#Endig loop
-else
-{}
-
-} # End of First IF
-
-} #ending for
-
-} #Ending Foreach
-
-write-host "End of array" -ForegroundColor Green
+            } # End of First IF
+            $i = $null
